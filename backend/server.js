@@ -2,8 +2,8 @@ const express = require("express");
 const http = require("http");
 const socketIo = require("socket.io");
 const mongoose = require("mongoose");
-const cors = require("cors");
 const User = require("./models/User");
+const cors = require("cors");
 
 const app = express();
 const server = http.createServer(app);
@@ -14,19 +14,28 @@ const io = socketIo(server, {
   },
 });
 
+// Connect to MongoDB
+mongoose
+  .connect("mongodb://127.0.0.1/chatroom")
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.log(err));
+
 app.use(cors());
 app.use(express.json());
 
-mongoose
-  .connect("mongodb://127.0.0.1/chat")
-  .then(() => console.log("mongo connected"))
-  .catch((err) => console.log(err));
+const onlineUsers = new Map(); // Map to hold online status
+// Map object: A collection type for storing key-value pairs with keys of any type, maintaining insertion order.
+// .map() method: An array method used to create a new array from an existing one by applying a function to each element.
 
-const onlineUsers = new Map();
+console.log(
+  "Server starting, onlineUsers map initialized:",
+  Array.from(onlineUsers.values())
+);
 
 io.on("connection", (socket) => {
-  console.log("someone connected");
-  // register
+  console.log("A user connected");
+
+  // Handle user registration
   socket.on("register", async (username) => {
     try {
       let user = await User.findOneAndUpdate(
@@ -34,42 +43,46 @@ io.on("connection", (socket) => {
         { online: true },
         { new: true, upsert: true }
       );
-
       if (user) {
         socket.username = username;
         onlineUsers.set(username, { username, online: true });
 
+        // Notify all clients of the new user
         io.emit("user online", { username, online: true });
 
+        // Emit the current users and the messages to the newly connected client **after registration**
         const users = await User.find({}, { messages: 1, username: 1 });
 
-        const allmessages = [];
-
+        const allMessages = [];
         users.forEach((user) => {
-          allmessages.message.forEach((msg) => {
-            allmessages.push({
+          user.messages.forEach((msg) => {
+            allMessages.push({
               username: user.username,
               content: msg.content,
               timestamp: msg.timestamp,
             });
           });
         });
-        allmessages.sort(
+
+        // Sort messages by timestamp
+        allMessages.sort(
           (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
         );
-        socket.emit("load messages", allmessages);
+
+        // Emit current messages and users after registration is successful
+        socket.emit("load messages", allMessages);
         socket.emit("current users", Array.from(onlineUsers.values()));
 
-        socket.emit("registration succes", user);
+        socket.emit("registration success", user);
       } else {
-        socket.emit("registration failed", "Username exists");
+        socket.emit("registration failed", "Username already exists");
       }
-    } catch (err) {
-      socket.emit("registration failed", err.message);
+    } catch (error) {
+      socket.emit("registration failed", error.message);
     }
   });
-  // chat message
 
+  // Handle chat messages
   socket.on("chat message", async (msg) => {
     try {
       let user = await User.findOneAndUpdate(
@@ -79,17 +92,19 @@ io.on("connection", (socket) => {
         },
         { new: true }
       );
+
       if (user) {
         io.emit("chat message", {
           username: socket.username,
-          content: msg.conent,
+          content: msg.content,
         });
       }
-    } catch (err) {
-      console.log("Error sending message", err);
+    } catch (error) {
+      console.log("Error saving message:", error);
     }
   });
-  // user discconection
+
+  // Handle user disconnection
   socket.on("disconnect", async () => {
     if (socket.username) {
       await User.findOneAndUpdate(
@@ -102,6 +117,5 @@ io.on("connection", (socket) => {
   });
 });
 
-const port = 5000;
-
-server.listen(port, () => console.log("server running on port 5k"));
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

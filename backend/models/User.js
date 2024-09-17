@@ -10,10 +10,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  message: [
+  messages: [
     {
       content: { type: String, required: true },
-      timestampt: { type: Date, default: Date.now },
+      timestamp: { type: Date, default: Date.now },
     },
   ],
 });
